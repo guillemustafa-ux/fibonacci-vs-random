@@ -2,7 +2,7 @@
 
 Open-source TradingView indicator (Pine Script v6) that finds swings with pivot highs and lows, measures how deep each pullback went into the leg before it, and tests whether those depths land near the Fibonacci retracement levels (0.236, 0.382, 0.5, 0.618, 0.786) more often than near sets of ratios drawn at random, with the same tolerance.
 
-Published on TradingView: not yet. Add the script URL here after publishing (see the checklist in `TRADINGVIEW_PUBLICATION.md`).
+Published on TradingView: https://www.tradingview.com/script/MV9tTaED-Fibonacci-vs-Random-Ratios-Where-Pullbacks-Actually-Stop/
 
 ## What it measures
 
@@ -110,7 +110,22 @@ Expected sign: on the zigzag the Fibonacci rate beats every random set, so 0 set
 
 Two things to notice in the output. The random walk's depths lean deep (58% of the pullbacks are deeper than 0.6), so both the Fibonacci rate and the random rates sit below the uniform reference of 33.3%; the baseline absorbs that, the reference does not. On the zigzag the best random set reaches 68.6% because it happens to hold ratios near 0.618 and 0.5, where most of the shaped retraces stop; it still falls short of the five levels together, which is what "0 of 20" records.
 
-Result on TradingView: not yet run. Add the figures here after the first compile, as the publishing checklist says.
+Result on TradingView, 2026-10-14, BINANCE:BTCUSDT 1 hour, default settings (pivot length 10, tolerance 0.02, five levels, 20 random sets, seed 7): the script compiled without errors or warnings and counted 24,411 bars from 2024-01-01.
+
+| Measure | Value |
+|---|---|
+| Pullbacks | 683 tested, 562 full retraces excluded |
+| Fib hits | 163, rate 23.9%, 95% interval 20.7% to 27.1% |
+| Random ratios | 20 sets of 5, mean rate 24.5%, min 20.1%, max 28.7% |
+| Random sets >= fib | 12 of 20, "fib not special" |
+| Difference | fib minus random mean -0.6 points; uniform reference 33.3% |
+| Depth distribution | 0-0.2 0.9%, 0.2-0.4 18.0%, 0.4-0.6 30.5%, 0.6-0.8 27.8%, 0.8-1 22.8% |
+| Last pullback | depth 0.94, not a fib hit, bar 2026-10-13 08:00 UTC |
+
+- Identities: 163 / 683 = 23.9%; the five bins add up to 100.0%; `1.96 * sqrt(0.239 * 0.761 / 683)` = 3.2 points, so the interval is right; `5 * 2 * 0.02 / 0.6` = 33.3%.
+- Control, tolerance 0.05: fib 60.8% (415 hits) vs random mean 58.7% (52.3% to 64.3%), 7 of 20 sets >= fib, still "fib not special", difference +2.0 points. Both rates rose by about the same amount, as expected.
+- On this chart the Fibonacci levels are not special: a majority of random ratio sets catch pullbacks as often as the five levels do.
+- The hand measurement of one labeled pullback and the seed check were not run on screen; the simulation covers both rules.
 
 ## Limitations
 
