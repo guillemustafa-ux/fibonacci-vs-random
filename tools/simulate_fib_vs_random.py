@@ -18,8 +18,10 @@ ignored otherwise), and when a kept pivot is appended as the third one it measur
 depth = pullback / leg. A leg of zero or negative height or a depth <= 0 is skipped, a depth >= 1 is a full
 retrace, a depth in (0, 1) is a pullback and enters the hit test against the Fibonacci levels and against K
 sets of random ratios in [0.2, 0.8]. The random ratios come from the same linear congruential generator as
-the Pine script, state = (1103515245 * state + 12345) % 2^31 and ratio = 0.2 + 0.6 * state / 2^31, so the
-same seed gives the same sets here and on the chart.
+the Pine script, state = (1103515245 * state + 12345) % 2^31 and u = state / 2^31; the u of a set are sorted
+and spread as ratio j = 0.2 + span * u_j + j * gap, with gap = 2 * TOL and span = 0.6 - (M - 1) * gap, so no
+two windows of a set overlap, as no two windows of the levels do. The same seed gives the same sets here and
+on the chart.
 
 Printed for both series, with the labels of the Pine table: pullbacks, full retraces and bars counted;
 Fibonacci hits, rate and 95% confidence interval; the random sets' mean, lowest and highest rate; how many
@@ -44,19 +46,22 @@ LEVEL_WEIGHTS = [(0.618, 0.5), (0.5, 0.15), (0.382, 0.15), (0.786, 0.1), (0.236,
 DEPTH_NOISE = 0.01  # standard deviation of the noise added to the target depth
 
 
-def lcg_sets(seed, sets, size):
-    """K sets of `size` ratios in [0.2, 0.8] from the Pine script's generator: same seed, same ratios."""
+def lcg_sets(seed, sets, size, tol):
+    """K sets of `size` ratios in [0.2, 0.8], at least 2 * tol apart, from the Pine script's generator: same seed, same ratios."""
     state = seed
+    gap = 2 * tol
+    span = 0.6 - (size - 1) * gap
     out = []
     for _ in range(sets):
-        ratios = []
+        u = []
         for _ in range(size):
             prev = state
             state = (1103515245 * prev + 12345) % 2147483648
             # The Pine script takes the product in two parts that stay below 2^53; both forms must agree.
             assert state == (((16838 * prev) % 32768) * 65536 + 20077 * prev + 12345) % 2147483648
-            ratios.append(0.2 + 0.6 * state / 2147483648)
-        out.append(ratios)
+            u.append(state / 2147483648.0)
+        u.sort()
+        out.append([0.2 + span * u[j] + j * gap for j in range(size)])
     return out
 
 
@@ -225,8 +230,8 @@ def simulate(name, bars, rand_sets):
 
 
 def main():
-    rand_sets = lcg_sets(SEED, SETS, len(FIB))
-    print(f"Random sets: {SETS} sets of {len(FIB)} ratios in [0.2, 0.8] from the LCG with seed {SEED}; "
+    rand_sets = lcg_sets(SEED, SETS, len(FIB), TOL)
+    print(f"Random sets: {SETS} sets of {len(FIB)} ratios in [0.2, 0.8], at least {2 * TOL:g} apart, from the LCG with seed {SEED}; "
           f"set 0 is {' '.join(f'{r:.3f}' for r in rand_sets[0])}\n")
     walk = simulate("Random walk", make_walk(SEED, BARS), rand_sets)
     zig = simulate("Zigzag with Fibonacci retraces", make_zigzag(SEED, BARS), rand_sets)

@@ -4,11 +4,12 @@ indicator("Fibonacci vs Random Ratios: Where Pullbacks Actually Stop", shorttitl
 // Fibonacci vs Random Ratios
 // 1) Finds swings with ta.pivothigh and ta.pivotlow over one pivot length and keeps them alternating: a pivot
 //    of the same type as the last kept one replaces it when it is more extreme and is ignored otherwise. Every
-//    kept pivot after the second ends a pullback: the two before it define the leg, the new one is where the
+//    pivot appended after the second ends a pullback: the two before it define the leg, the new one is where the
 //    pullback stopped, and depth = pullback / leg. A depth of 1 or more is a full retrace and leaves the test.
 // 2) A pullback is a Fibonacci hit when its depth lies within a tolerance of one of the enabled levels (0.236,
 //    0.382, 0.5, 0.618, 0.786). The same test runs against K sets of as many ratios each, drawn once in
-//    [0.2, 0.8] by a seeded generator, so the sets are the same on every bar and on every chart.
+//    [0.2, 0.8] by a seeded generator, so the sets are the same on every bar and on every chart. The ratios of
+//    a set are at least twice the tolerance apart, so their windows never overlap, as the levels' do not.
 // 3) On the last bar the table shows the Fibonacci hit rate with a 95% confidence interval, the mean, lowest
 //    and highest rate of the random sets, how many random sets did as well as the levels or better, and the
 //    distribution of depths. When many random sets do as well, the levels are not special on this chart.
@@ -17,14 +18,14 @@ indicator("Fibonacci vs Random Ratios: Where Pullbacks Actually Stop", shorttitl
 // ───────────────────────── Inputs ─────────────────────────
 len = input.int(10, "Pivot length", minval = 2, group = "Swings", tooltip = "Bars on each side that a pivot high or low must exceed. A pivot confirms this many bars after its bar, and its price is the high or low of that bar. Every number in the table depends on it.")
 
-tol = input.float(0.02, "Tolerance", minval = 0.005, maxval = 0.1, step = 0.005, group = "Levels", tooltip = "A pullback is a hit when |depth - ratio| <= tolerance. The same tolerance applies to the Fibonacci levels and to the random ratios.")
+tol = input.float(0.02, "Tolerance", minval = 0.005, maxval = 0.05, step = 0.005, group = "Levels", tooltip = "A pullback is a hit when |depth - ratio| <= tolerance. The same tolerance applies to the Fibonacci levels and to the random ratios. At most 0.05, so the windows of two levels never overlap.")
 use236 = input.bool(true, "0.236", group = "Levels", inline = "levels")
 use382 = input.bool(true, "0.382", group = "Levels", inline = "levels")
 use500 = input.bool(true, "0.5", group = "Levels", inline = "levels")
 use618 = input.bool(true, "0.618", group = "Levels", inline = "levels")
 use786 = input.bool(true, "0.786", group = "Levels", inline = "levels")
 
-numSets = input.int(20, "Random sets K", minval = 5, maxval = 50, group = "Random baseline", tooltip = "Sets of random ratios the pullbacks are tested against. Each set has as many ratios as there are enabled levels, each ratio uniform in [0.2, 0.8].")
+numSets = input.int(20, "Random sets K", minval = 20, maxval = 50, group = "Random baseline", tooltip = "Sets of random ratios the pullbacks are tested against. Each set has as many ratios as there are enabled levels, drawn at random in [0.2, 0.8] at least twice the tolerance apart. At least 20, so that 0 of K means 1 in 21 or less by chance.")
 seed = input.int(7, "Seed", minval = 0, maxval = 2147483647, group = "Random baseline", tooltip = "Seed of the generator that draws the random ratios. The same seed gives the same ratios on every chart; change it to draw other sets.")
 
 labelN = input.int(30, "Label the last N pullbacks", minval = 0, maxval = 100, group = "Display", tooltip = "A label at the pivot where each of the last N pullbacks stopped, with its depth; F marks a Fibonacci hit. 0 draws none.")
@@ -52,21 +53,34 @@ if barstate.isfirst
         levelsTxt := "none"
 int numLevels = array.size(fibLevels)
 
-// K sets of numLevels ratios each, uniform in [0.2, 0.8], from the linear congruential generator
+// K sets of numLevels ratios each in [0.2, 0.8], from the linear congruential generator
 // state = (1103515245 * state + 12345) % 2^31 seeded by the input, so the same seed gives the same sets on
 // every chart. The product is taken in two parts that each stay below 2^53, so it is exact whatever the width
-// of the int: 1103515245 = 16838 * 65536 + 20077. Flattened: ratio j of set k is at k * numLevels + j. The
-// per-set hit counts live beside them. The loops are guarded: with no level enabled there is nothing to draw,
-// and a for loop whose end is below its start would count down.
+// of the int: 1103515245 = 16838 * 65536 + 20077. The ratios of a set are spaced at least gap = 2 * tol apart,
+// so their windows never overlap and every set covers numLevels * 2 * tol of depths, as the levels do (their
+// closest pair is 0.118 apart and tol is at most 0.05). Independent uniform ratios would overlap often and
+// cover less, which favours the levels even on a random walk. For each set: numLevels uniforms u in [0, 1),
+// sorted, then ratio j = 0.2 + span * u_j + j * gap with span = 0.6 - (numLevels - 1) * gap, which is uniform
+// over the sets of ratios in [0.2, 0.8] that keep that spacing. Flattened: ratio j of set k is at
+// k * numLevels + j. The per-set hit counts live beside them. The loops are guarded: with no level enabled
+// there is nothing to draw, and a for loop whose end is below its start would count down.
 var array<float> randRatios = array.new<float>()
 var array<int> randHits = array.new<int>()
 if barstate.isfirst
     int state = seed
     if numLevels > 0
-        for i = 0 to numSets * numLevels - 1
-            int hi = (16838 * state) % 32768
-            state := (hi * 65536 + 20077 * state + 12345) % 2147483648
-            array.push(randRatios, 0.2 + 0.6 * state / 2147483648)
+        float gap = 2 * tol
+        float span = 0.6 - (numLevels - 1) * gap
+        array<float> u = array.new<float>()
+        for k = 0 to numSets - 1
+            array.clear(u)
+            for j = 0 to numLevels - 1
+                int hi = (16838 * state) % 32768
+                state := (hi * 65536 + 20077 * state + 12345) % 2147483648
+                array.push(u, state / 2147483648.0)
+            array.sort(u)
+            for j = 0 to numLevels - 1
+                array.push(randRatios, 0.2 + span * array.get(u, j) + j * gap)
     for k = 0 to numSets - 1
         array.push(randHits, 0)
 
@@ -258,7 +272,8 @@ if barstate.islast
         if n > 0 and n < 30
             verdict += " (small sample)"
         // What a depth spread evenly over [0.2, 0.8] would give: each ratio catches 2 * tol of that 0.6 range;
-        // overlapping windows make the true figure a little smaller. Capped at 100%.
+        // a window near 0.2 or 0.8 reaches outside the range, which makes the true figure a little smaller.
+        // Capped at 100%.
         float uniformRef = math.min(numLevels * 2 * tol / 0.6, 1.0)
         // ticker.standard gives the plain "prefix:ticker" form; syminfo.tickerid can carry the session,
         // adjustment and currency modifiers in an encoded form.
